@@ -16,7 +16,9 @@
 #define NUMDISCIPLINES 10
 #define MAXSIZE 4096
 #define PRIMARY_MENU "\n======= Menu Principal =======\nSelecione a opção desejada:\n1 - Listar códigos das disciplinas.\n2 - Listar informações das disciplinas.\n3 - Informações sobre disciplina.\n4 - Ementa da disciplina.\n5 - Comentário sobre próxima aula.\nE - Encerrar conexão.\ninput: "
+#define PROFESSOR_MENU "\n======= Menu Principal =======\nSelecione a opção desejada:\n1 - Listar códigos das disciplinas.\n2 - Listar informações das disciplinas.\n3 - Informações sobre disciplina.\n4 - Ementa da disciplina.\n5 - Comentário sobre próxima aula.\n6 - Escrever comentário da próxima aula.\nE - Encerrar conexão.\ninput: "
 #define SECONDARY_MENU "\n======= Menu Secundário =======\n1 - Menu principal.\nE - Encerrar Conexão.\ninput: "
+#define USER_MENU "\n======= Tipo de Usuário =======\n1 - Aluno.\n2 - Professor.\ninput: "
 
 typedef struct {
     char title[50];
@@ -29,6 +31,7 @@ typedef struct {
 
 // == NETWORK == //
 void communication(int cli_fd, char * buf, discipline * dsps );
+void update_next_class( int cli_fd, char * buf, discipline * dsps, int size );
 void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size );
 int sendall(int s, char *buf, int *len);
 
@@ -100,18 +103,51 @@ int main(int argc, char **argv) {
     }
 }
 
-
 // == NETWORK == //
 void communication(int cli_fd, char * buf, discipline * dsps ) {
-    int len, size = 5;
+    int len, size = 5, user = 0, numbytes;
+    
+    strcpy(buf, USER_MENU );
+    
+    len = strlen(buf);
+    sendall(cli_fd, buf, &len);
+    
+    while( 1 ) {
+        numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+    
+        if ( buf[0] == '2' ) {
+            strcpy(buf, "Senha de acesso: " );
+            len = strlen(buf);
+            sendall(cli_fd, buf, &len);
+            
+            numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+            buf[numbytes] = '\0';
+            if ( strcmp(buf, "admin") == 0 ){
+                user = 1;
+                break;
+            }
+            else {
+                strcpy(buf, "\nSenha incorreta." );
+                strcat(buf, USER_MENU );
+                len = strlen(buf);
+                sendall(cli_fd, buf, &len);
+            }
+        }
+        else {
+            break;
+        }
+    }
+    
     while (1) {
         int end = 0;
-        strcpy(buf, PRIMARY_MENU );
+        
+        if ( user == 0) strcpy(buf, PRIMARY_MENU );
+        else strcpy(buf, PROFESSOR_MENU );
         
         len = strlen(buf);
         sendall(cli_fd, buf, &len);
         
-        int numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+        numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
         
         switch (buf[0]) {
             case '1':
@@ -129,6 +165,9 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
             case '5':
                 discipline_queries(cli_fd, buf, dsps, size );
                 break;
+            case '6':
+                if (user == 1) update_next_class( cli_fd, buf, dsps, size );
+                break;
             case 'E':
             case 'e':
                 end = 1;
@@ -144,7 +183,41 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
     }
 }
 
-void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size  ) {
+void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
+    int len, numbytes;
+    strcpy(buf, "\n======= Alterar comentário próxima aula =======\nDigite o código da disciplina: ");
+    
+    len = strlen(buf);
+    sendall(cli_fd, buf, &len);
+    
+    numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+    
+    buf[numbytes] = '\0';
+    for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
+    discipline *ret = find_discipline(buf, dsps, size);
+    
+    if ( ret != NULL ) {
+        strcpy(buf, "Insira comentário (250): ");
+        len = strlen(buf);
+        sendall(cli_fd, buf, &len);
+        
+        numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+        buf[numbytes] = '\0';
+        
+        set_next_class( ret, buf);
+        strcpy(buf, "\nComentário alterado.");
+        strcat(buf, SECONDARY_MENU);
+    }
+    else {
+        strcpy(buf, "\nDisciplina não encontrada.");
+        strcat(buf, SECONDARY_MENU);
+    }
+    
+    len = strlen(buf);
+    sendall(cli_fd, buf, &len);
+}
+
+void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size ) {
     int len;
     char option = buf[0], *message;
     if ( option == '3') {
@@ -162,9 +235,7 @@ void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size  ) 
     int numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
     
     buf[numbytes] = '\0';
-//    for( int i = 0; i < numbytes; i++ ){
-//        printf("%c", toupper(buf[i]));
-//    }
+    for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
     discipline *ret = find_discipline(buf, dsps, size);
     
     if ( ret != NULL ) {
@@ -180,7 +251,7 @@ void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size  ) 
         }
     }
     else {
-        strcpy(buf, "Disciplina não encontrada.");
+        strcpy(buf, "\nDisciplina não encontrada.");
         strcat(buf, SECONDARY_MENU);
     }
 
