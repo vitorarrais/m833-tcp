@@ -36,9 +36,15 @@ int main(int argc, char *argv[]) {
     
     getaddrinfo(argv[1], SERV_PORT, &hints, &serv_addr);
     
-    conn_fd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol);
+    if ( (conn_fd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol)) == -1) {
+        printf("Não foi possível criar socket.\n");
+        return 0;
+    }
     
-    connect(conn_fd, serv_addr->ai_addr, serv_addr->ai_addrlen);
+    if ( (connect(conn_fd, serv_addr->ai_addr, serv_addr->ai_addrlen)) == -1 ) {
+        printf("Não foi possível estabelecer conexão.\n");
+        return 0;
+    }
     
     while (1) {
         numbytes = recv(conn_fd, buf, MAXDATASIZE-1, 0);

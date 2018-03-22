@@ -4,17 +4,19 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <signal.h>
 
 #define SERV_PORT "4990"
 #define NUMDISCIPLINES 10
 #define MAXSIZE 4096
+#define INTRO "Bem vindo ao sistema de consultas de disciplinas.\nFaça login para acessar a aplicação."
 #define PRIMARY_MENU "\n======= Menu Principal =======\nSelecione a opção desejada:\n1 - Listar códigos das disciplinas.\n2 - Listar informações das disciplinas.\n3 - Informações sobre disciplina.\n4 - Ementa da disciplina.\n5 - Comentário sobre próxima aula.\nE - Encerrar conexão.\ninput: "
 #define PROFESSOR_MENU "\n======= Menu Principal =======\nSelecione a opção desejada:\n1 - Listar códigos das disciplinas.\n2 - Listar informações das disciplinas.\n3 - Informações sobre disciplina.\n4 - Ementa da disciplina.\n5 - Comentário sobre próxima aula.\n6 - Escrever comentário da próxima aula.\nE - Encerrar conexão.\ninput: "
 #define SECONDARY_MENU "\n======= Menu Secundário =======\n1 - Menu principal.\nE - Encerrar Conexão.\ninput: "
@@ -52,6 +54,12 @@ void info_to_buffer (char * buf, discipline * dsp);
 void syllabus_to_buffer (char * buf, discipline * dsp);
 void next_class_to_buffer (char * buf, discipline * dsp);
 
+// == TIME FUNCTIONS == //
+void start_time();
+int get_time();
+
+// = time variables =
+struct timeval tv1, tv2;
 
 // == MAIN == //
 int main(int argc, char **argv) {
@@ -66,6 +74,7 @@ int main(int argc, char **argv) {
     // = logic variables =
     discipline dsps[NUMDISCIPLINES];
     char buf[MAXSIZE];
+
     
     // == INIT ==
     init_discipline(&dsps[0], "Laboratório Circuitos Digitais", "Metodologia de projeto digital. Técnicas de projeto usando lógica programável.", "CC305", "Introdução a sinais em VHDL.", 16, "MC613" );
@@ -89,11 +98,14 @@ int main(int argc, char **argv) {
     
     listen(conn_fd, 10);
     printf("server: waiting for connections...\n");
+//    printf("pinto\n");
     
     while(1) {
         cli_len = sizeof(cli_addr);
         cli_fd = accept(conn_fd, (struct sockaddr *) &cli_addr, &cli_len);
         if ( !fork() ) {
+            struct sockaddr_in *sin = (struct sockaddr_in *) &cli_addr;
+            printf("server(#%d): connected to %s:(%d)\n", getpid(), inet_ntoa(sin->sin_addr), sin->sin_port);
             close(conn_fd);
             communication(cli_fd, buf, dsps);
             close(cli_fd);
@@ -107,7 +119,8 @@ int main(int argc, char **argv) {
 void communication(int cli_fd, char * buf, discipline * dsps ) {
     int len, size = 5, user = 0, numbytes;
     
-    strcpy(buf, USER_MENU );
+    strcpy(buf, INTRO );
+    strcat(buf, USER_MENU );
     
     len = strlen(buf);
     sendall(cli_fd, buf, &len);
@@ -139,7 +152,7 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
     }
     
     while (1) {
-        int end = 0;
+        int end = 0, timer;
         
         if ( user == 0) strcpy(buf, PRIMARY_MENU );
         else strcpy(buf, PROFESSOR_MENU );
@@ -151,12 +164,16 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
         
         switch (buf[0]) {
             case '1':
+                start_time();
                 list_info_to_buffer( buf, dsps, size);
+                printf("server(#%d): query - list all codes, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
                 sendall(cli_fd, buf, &len);
                 break;
             case '2':
+                start_time();
                 list_all_to_buffer( buf, dsps, size);
+                printf("server(#%d): query - list all disciplines, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
                 sendall(cli_fd, buf, &len);
                 break;
@@ -204,7 +221,9 @@ void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
         numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
         buf[numbytes] = '\0';
         
+        start_time();
         set_next_class( ret, buf);
+        printf("server(#%d): query - update next class commentary, time: %dµs\n", getpid(), get_time());
         strcpy(buf, "\nComentário alterado.");
         strcat(buf, SECONDARY_MENU);
     }
@@ -240,14 +259,20 @@ void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size ) {
     
     if ( ret != NULL ) {
         if ( option == '3') {
+            start_time();
             discipline_to_buffer(buf, ret);
+            printf("server(#%d): query - get discipline info, time: %dµs\n", getpid(), get_time());
             strcat(buf, SECONDARY_MENU);
         }
         if ( option == '4') {
+            start_time();
             syllabus_to_buffer(buf, ret);
+            printf("server(#%d): query - get discipline info, time: %dµs\n", getpid(), get_time());
         }
         if ( option == '5') {
+            start_time();
             next_class_to_buffer(buf, ret);
+            printf("server(#%d): query - get discipline next class commentary, time: %dµs\n", getpid(), get_time());
         }
     }
     else {
@@ -356,5 +381,15 @@ void syllabus_to_buffer (char * buf, discipline * dsp) {
 void next_class_to_buffer (char * buf, discipline * dsp) {
     sprintf(buf, "%-15s %s \n%-16s %s \n", "Disciplina:", dsp->title, "Próxima aula:", dsp->next_class);
     strcat(buf, SECONDARY_MENU);
+}
+
+
+void start_time() {
+    gettimeofday(&tv1, NULL);
+}
+
+int get_time() {
+    gettimeofday(&tv2, NULL);
+    return tv2.tv_usec-tv1.tv_usec;
 }
 
