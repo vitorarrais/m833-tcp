@@ -52,9 +52,10 @@ int main(int argc, char *argv[]) {
         
         printf("%s", buf);
         
-        scanf("%s", buf);
+        fgets(buf, MAXDATASIZE, stdin);
         
         int len = strlen(buf);
+        buf[len-1] = '\0';
         sendall(conn_fd, buf, &len);
         
         if ( (buf[0] == 'E' || buf[0] == 'e') && buf[1] == '\0' ) break;

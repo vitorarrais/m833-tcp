@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <netinet/in.h>
@@ -28,28 +29,28 @@ typedef struct {
     char classroom[10];
     char next_class[250];
     short time;
-    char code[5];
+    char code[6];
 } discipline;
 
+// == INITIALIZE == //
+void init_size(int *size);
+void refresh_database( char **dsps, int size );
+
 // == NETWORK == //
-void communication(int cli_fd, char * buf, discipline * dsps );
-void update_next_class( int cli_fd, char * buf, discipline * dsps, int size );
-void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size );
+void communication(int cli_fd, char **dsps, char * buf, int size);
+void update_next_class( int cli_fd, char * buf, char **dsps, int size );
+void discipline_queries( int cli_fd, char * buf, char **dsps, int size );
 int sendall(int s, char *buf, int *len);
 
-// == MODIFY DISCIPLINE == //
-void init_discipline(discipline * dsp,  char * title, char * syllabus, char * classroom, char * next_class, short time, char * code);
-void set_next_class(discipline *dsp, char * next_class);
-
 // == SUPPORT FUNCTIONS == //
-discipline* find_discipline(char * code, discipline * dsps, int size);
-int is_discipline( char * code, discipline * dsp );
+void find_discipline(char * code, char **dsps, int size, int *idx);
+int is_discipline( char * code, char *dsps );
 void print_discipline(discipline * dsp);
 
 // == BUFFER FUNCTIONS == //
 void discipline_to_buffer (char * buf, discipline * dsp);
-void list_info_to_buffer (char * buf, discipline * dsps, int size);
-void list_all_to_buffer (char * buf, discipline * dsps, int size);
+void list_info_to_buffer (char * buf, int size);
+void list_all_to_buffer (char * buf, int size);
 void info_to_buffer (char * buf, discipline * dsp);
 void syllabus_to_buffer (char * buf, discipline * dsp);
 void next_class_to_buffer (char * buf, discipline * dsp);
@@ -57,6 +58,11 @@ void next_class_to_buffer (char * buf, discipline * dsp);
 // == TIME FUNCTIONS == //
 void start_time();
 int get_time();
+
+// == DATABASE FUNCTIONS == //
+void db_read_disciplines(discipline * dsps);
+void db_read_discipline(discipline * dsp, int index);
+void db_write_next_class( char * next_class, int index, int size );
 
 // = time variables =
 struct timeval tv1, tv2;
@@ -72,17 +78,18 @@ int main(int argc, char **argv) {
     struct sockaddr cli_addr;
     
     // = logic variables =
-    discipline dsps[NUMDISCIPLINES];
+    int size;
+    char ** dsps;
     char buf[MAXSIZE];
-
     
     // == INIT ==
-    init_discipline(&dsps[0], "Laboratório Circuitos Digitais", "Metodologia de projeto digital. Técnicas de projeto usando lógica programável.", "CC305", "Introdução a sinais em VHDL.", 16, "MC613" );
-    init_discipline(&dsps[1], "Cálculo I", "Intervalos e desigualdades. Funções. Limites. Continuidade. Derivada e diferencial. Integral.", "CB01", "Definição de integrais com limites infinitos.", 8, "MA111" );
-    init_discipline(&dsps[2], "Programação de Redes de Computadores", "Programação utilizando diferentes tecnologias de comunicação: sockets, TCP e UDP, e chamada de método remoto.", "CC303", "Aprensentação serviços cliente/servidor utilizando protocolo TCP", 10, "MC832" );
-    init_discipline(&dsps[3], "Mecânica Geral", "Revisão de matrizes e cálculo vetorial. Mecânica Newtoniana. Oscilações lineares.", "CB010", "Resolução de funções variáveis com a velocidade.", 8, "F315" );
-    init_discipline(&dsps[4], "Projeto e Análise de Algoritmos III", "Tratamento de Problemas NP-difíceis.", "CB02", "Aplicações de algoritmos branch-and-bound.", 14, "MC658" );
+    init_size( &size );
     
+    dsps = malloc(size * sizeof(char *));
+    for (int i = 0; i < size; i++)
+        dsps[i] = malloc(6 * sizeof(char));
+    
+    refresh_database( dsps, size );
     
     // == NETWORKING ==
     memset(&hints, 0, sizeof hints);
@@ -98,7 +105,6 @@ int main(int argc, char **argv) {
     
     listen(conn_fd, 10);
     printf("server: waiting for connections...\n");
-//    printf("pinto\n");
     
     while(1) {
         cli_len = sizeof(cli_addr);
@@ -107,17 +113,40 @@ int main(int argc, char **argv) {
             struct sockaddr_in *sin = (struct sockaddr_in *) &cli_addr;
             printf("server(#%d): connected to %s:(%d)\n", getpid(), inet_ntoa(sin->sin_addr), sin->sin_port);
             close(conn_fd);
-            communication(cli_fd, buf, dsps);
+            communication(cli_fd, dsps, buf, size);
             close(cli_fd);
             return 0;
         }
         close(cli_fd);
     }
 }
+// == INITIALIZE == //
+void init_size(int *size) {
+    char tmp[50];
+    
+    struct flock fl = {F_RDLCK, SEEK_SET, 0, 0, 0 };
+    fl.l_pid = getpid();
+    
+    FILE* fd = fopen("database.dat", "r");
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    
+    fscanf(fd, "%d\n", size);
+    
+    fl.l_type = F_UNLCK;
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    fclose(fd);
+}
+
+void refresh_database( char **dsps, int size ) {
+    discipline all[size];
+    db_read_disciplines(all);
+    for ( int i = 0; i < size; i++ ) strcpy(dsps[i],all[i].code);
+}
+
 
 // == NETWORK == //
-void communication(int cli_fd, char * buf, discipline * dsps ) {
-    int len, size = 5, user = 0, numbytes;
+void communication(int cli_fd, char **dsps, char * buf, int size) {
+    int len, user = 0, numbytes;
     
     strcpy(buf, INTRO );
     strcat(buf, USER_MENU );
@@ -165,14 +194,14 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
         switch (buf[0]) {
             case '1':
                 start_time();
-                list_info_to_buffer( buf, dsps, size);
+                list_info_to_buffer( buf, size);
                 printf("server(#%d): query - list all codes, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
                 sendall(cli_fd, buf, &len);
                 break;
             case '2':
                 start_time();
-                list_all_to_buffer( buf, dsps, size);
+                list_all_to_buffer( buf, size);
                 printf("server(#%d): query - list all disciplines, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
                 sendall(cli_fd, buf, &len);
@@ -200,8 +229,11 @@ void communication(int cli_fd, char * buf, discipline * dsps ) {
     }
 }
 
-void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
-    int len, numbytes;
+void update_next_class( int cli_fd, char * buf, char **dsps, int size ) {
+    int len, numbytes, id;
+    
+    refresh_database( dsps, size );
+    
     strcpy(buf, "\n======= Alterar comentário próxima aula =======\nDigite o código da disciplina: ");
     
     len = strlen(buf);
@@ -211,9 +243,9 @@ void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
     
     buf[numbytes] = '\0';
     for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
-    discipline *ret = find_discipline(buf, dsps, size);
+    find_discipline(buf, dsps, size, &id);
     
-    if ( ret != NULL ) {
+    if ( id != -1 ) {
         strcpy(buf, "Insira comentário (250): ");
         len = strlen(buf);
         sendall(cli_fd, buf, &len);
@@ -222,7 +254,7 @@ void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
         buf[numbytes] = '\0';
         
         start_time();
-        set_next_class( ret, buf);
+        db_write_next_class(buf, id, size);
         printf("server(#%d): query - update next class commentary, time: %dµs\n", getpid(), get_time());
         strcpy(buf, "\nComentário alterado.");
         strcat(buf, SECONDARY_MENU);
@@ -236,9 +268,13 @@ void update_next_class( int cli_fd, char * buf, discipline * dsps, int size ) {
     sendall(cli_fd, buf, &len);
 }
 
-void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size ) {
-    int len;
+void discipline_queries( int cli_fd, char * buf, char **dsps, int size ) {
+    int len, id;
     char option = buf[0], *message;
+    discipline dsp;
+    
+    refresh_database( dsps, size );
+    
     if ( option == '3') {
         strcpy(buf, "\n======= Informações sobre disciplina =======\nDigite o código da disciplina: ");
     }
@@ -255,23 +291,26 @@ void discipline_queries( int cli_fd, char * buf, discipline * dsps, int size ) {
     
     buf[numbytes] = '\0';
     for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
-    discipline *ret = find_discipline(buf, dsps, size);
+    find_discipline(buf, dsps, size, &id);
     
-    if ( ret != NULL ) {
+    if ( id != -1 ) {
         if ( option == '3') {
             start_time();
-            discipline_to_buffer(buf, ret);
+            db_read_discipline(&dsp, id);
+            discipline_to_buffer(buf, &dsp);
             printf("server(#%d): query - get discipline info, time: %dµs\n", getpid(), get_time());
             strcat(buf, SECONDARY_MENU);
         }
         if ( option == '4') {
             start_time();
-            syllabus_to_buffer(buf, ret);
+            db_read_discipline(&dsp, id);
+            syllabus_to_buffer(buf, &dsp);
             printf("server(#%d): query - get discipline info, time: %dµs\n", getpid(), get_time());
         }
         if ( option == '5') {
             start_time();
-            next_class_to_buffer(buf, ret);
+            db_read_discipline(&dsp, id);
+            next_class_to_buffer(buf, &dsp);
             printf("server(#%d): query - get discipline next class commentary, time: %dµs\n", getpid(), get_time());
         }
     }
@@ -308,10 +347,6 @@ void init_discipline(discipline * dsp,  char * title, char * syllabus, char * cl
     dsp->time = time;
 }
 
-void set_next_class(discipline *dsp, char * next_class) {
-    strcpy(dsp->next_class, next_class);
-}
-
 // == SUPPORT FUNCTIONS == //
 void print_discipline(discipline * dsp) {
     printf("%-16s %s \n", "Código:", dsp->code);
@@ -322,38 +357,49 @@ void print_discipline(discipline * dsp) {
     printf("%-16s %s \n", "Próxima aula:", dsp->next_class);
 }
 
-discipline* find_discipline(char * code, discipline* dsps, int size) {
+void find_discipline(char * code, char **dsps, int size, int *idx) {
     for ( int i = 0; i < size; i++ ) {
-        if ( is_discipline(code, &dsps[i] ) ) return &dsps[i];
+        if ( is_discipline(code, dsps[i]) == 0 ) {
+            *idx = i;
+            return;
+        }
     }
-    return NULL;
+    *idx = -1;
 }
 
-int is_discipline( char * code, discipline * dsp ) {
-    if ( strcmp(code,dsp->code) == 0 ) return 1;
-    else return 0;
+int is_discipline( char * code, char *dsp ) {
+    for ( int i = 0; i < 5; i++ ) {
+        if ( code[i] != dsp[i] ) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 // == BUFFER FUNCTIONS == //
-void list_all_to_buffer (char * buf, discipline * dsps, int size) {
+void list_all_to_buffer (char * buf, int size) {
+    discipline all[size];
+    db_read_disciplines( all );
     char tmp[MAXSIZE];
     strcpy(buf,"\n======= Códigos das disciplinas =======");
     for ( int i = 0; i < size; i++ ) {
         sprintf(tmp, "\n== #%d == \n", (i+1));
         strcat(buf,tmp);
-        discipline_to_buffer (tmp, &dsps[i]);
+        discipline_to_buffer (tmp, &all[i]);
         strcat(buf,tmp);
     }
     strcat(buf, SECONDARY_MENU);
 }
 
-void list_info_to_buffer (char * buf, discipline * dsps, int size) {
+void list_info_to_buffer (char * buf, int size) {
+    discipline all[size];
+    db_read_disciplines( all );
     char tmp[MAXSIZE];
     strcpy(buf,"\n======= Informações das disciplinas =======");
     for ( int i = 0; i < size; i++ ) {
         sprintf(tmp, "\n== #%d == \n", (i+1));
         strcat(buf,tmp);
-        info_to_buffer (tmp, &dsps[i]);
+        info_to_buffer (tmp, &all[i]);
         strcat(buf,tmp);
     }
     strcat(buf, SECONDARY_MENU);
@@ -383,6 +429,82 @@ void next_class_to_buffer (char * buf, discipline * dsp) {
     strcat(buf, SECONDARY_MENU);
 }
 
+// == DATABASE FUNCTIONS == //
+
+//char title[50];
+//char syllabus[1024];
+//char classroom[10];
+//char next_class[250];
+//short time;
+//char code[6];
+
+void db_read_disciplines( discipline * dsps) {
+    struct flock fl = {F_RDLCK, SEEK_SET, 0, 0, 0 };
+    fl.l_pid = getpid();
+    int N;
+    
+    FILE* fd = fopen("database.dat", "r");
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    
+    fscanf(fd, "%d\n", &N);
+    
+    for ( int i = 0; i < N; i++ )
+        fscanf(fd, "%59[^;]; %1023[^;]; %9[^;]; %249[^;]; %5[^;]; %hd\n", dsps[i].title, dsps[i].syllabus, dsps[i].classroom, dsps[i].next_class, dsps[i].code, &dsps[i].time);
+    
+    fl.l_type = F_UNLCK;
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    fclose(fd);
+}
+void db_read_discipline(discipline * dsp, int index) {
+    struct flock fl = {F_RDLCK, SEEK_SET, 0, 0, 0 };
+    fl.l_pid = getpid();
+    int N;
+    
+    FILE* fd = fopen("database.dat", "r");
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    
+    fscanf(fd, "%d\n", &N);
+    
+    for ( int i = 0; i < index+1; i++ )
+        fscanf(fd, "%59[^;]; %1023[^;]; %9[^;]; %249[^;]; %5[^;]; %hd\n", dsp->title, dsp->syllabus, dsp->classroom, dsp->next_class, dsp->code, &dsp->time);
+    
+    fl.l_type = F_UNLCK;
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    fclose(fd);
+
+}
+void db_write_next_class( char * next_class, int index, int size ) {
+    char filename[40] = "database.dat", replica[40] = "replica.dat";
+    int N;
+    
+    discipline dsps[size];
+    db_read_disciplines( dsps );
+    strcpy(dsps[index].next_class, next_class);
+    
+    struct flock fl = {F_WRLCK, SEEK_SET, 0, 0, 0 };
+    fl.l_pid = getpid();
+    
+    FILE* fd = fopen(filename, "w");
+    fcntl(fileno(fd), F_SETLKW, &fl);
+    fclose(fd);
+    
+    FILE* fd2 = fopen(replica, "w");
+    
+    fprintf(fd2, "%d\n", size);
+    for( int i = 0; i < size; i++ ) {
+        fprintf(fd2, "%s; %s; %s; %s; %s; %d\n", dsps[i].title, dsps[i].syllabus, dsps[i].classroom, dsps[i].next_class, dsps[i].code, dsps[i].time);
+    }
+    fclose(fd2);
+    
+    remove(filename);
+    rename(replica, filename);
+    
+    fl.l_type = F_UNLCK;
+    fcntl(fileno(fd), F_SETLKW, &fl);
+}
+
+
+// == TIME FUNCTIONS == //
 
 void start_time() {
     gettimeofday(&tv1, NULL);
@@ -392,4 +514,3 @@ int get_time() {
     gettimeofday(&tv2, NULL);
     return tv2.tv_usec-tv1.tv_usec;
 }
-
