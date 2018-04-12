@@ -1,6 +1,2 @@
-client
-server
 *.o
 **/*.o
-**/server
-**/client
