@@ -2,6 +2,7 @@
 
 // = time variables =
 struct timeval tv1, tv2;
+int timestamp;
 
 // == MAIN == //
 int main(int argc, char **argv) {
@@ -35,11 +36,20 @@ int main(int argc, char **argv) {
 
     getaddrinfo(NULL, SERV_PORT, &hints, &serv_addr);
 
-    conn_fd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol);
+    if ( (conn_fd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol)) == -1) {
+        printf("Não foi possível criar socket.\n");
+        return 0;
+    }
 
-    bind(conn_fd, serv_addr->ai_addr, serv_addr->ai_addrlen);
+    if ( bind(conn_fd, serv_addr->ai_addr, serv_addr->ai_addrlen) == -1 ) {
+    	printf("Não foi possível realizar bind.\n");
+        return 0;
+    }
 
-    listen(conn_fd, 10);
+    if ( listen(conn_fd, 10) == -1 ) {
+    	printf("Não foi possível dar listen.\n");
+        return 0;
+    }
     printf("server: waiting for connections...\n");
 
     while(1) {
@@ -93,17 +103,19 @@ void communication(int cli_fd, char **dsps, char * buf, int size) {
     strcat(buf, USER_MENU );
 
     len = strlen(buf);
-    sendall(cli_fd, buf, &len);
+    sendall(cli_fd, buf, &len, 0);
 
     while( 1 ) {
         numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+        if (numbytes == -1) break;
 
         if ( buf[0] == '2' ) {
             strcpy(buf, "Senha de acesso: " );
             len = strlen(buf);
-            sendall(cli_fd, buf, &len);
+            sendall(cli_fd, buf, &len, 0);
 
             numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+            if (numbytes == -1) break;
             buf[numbytes] = '\0';
             if ( strcmp(buf, "admin") == 0 ){
                 user = 1;
@@ -113,7 +125,7 @@ void communication(int cli_fd, char **dsps, char * buf, int size) {
                 strcpy(buf, "\nSenha incorreta." );
                 strcat(buf, USER_MENU );
                 len = strlen(buf);
-                sendall(cli_fd, buf, &len);
+                sendall(cli_fd, buf, &len, 0);
             }
         }
         else {
@@ -128,9 +140,10 @@ void communication(int cli_fd, char **dsps, char * buf, int size) {
         else strcpy(buf, PROFESSOR_MENU );
 
         len = strlen(buf);
-        sendall(cli_fd, buf, &len);
+        sendall(cli_fd, buf, &len, 0);
 
         numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+        if (numbytes == -1) break;
 
         switch (buf[0]) {
             case '1':
@@ -138,14 +151,14 @@ void communication(int cli_fd, char **dsps, char * buf, int size) {
                 list_info_to_buffer( buf, size);
                 printf("server(#%d): query - list all codes, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
-                sendall(cli_fd, buf, &len);
+                sendall(cli_fd, buf, &len, 1);
                 break;
             case '2':
                 start_time();
                 list_all_to_buffer( buf, size);
                 printf("server(#%d): query - list all disciplines, time: %dµs\n", getpid(), get_time());
                 len = strlen(buf);
-                sendall(cli_fd, buf, &len);
+                sendall(cli_fd, buf, &len, 1);
                 break;
             case '3':
             case '4':
@@ -162,6 +175,7 @@ void communication(int cli_fd, char **dsps, char * buf, int size) {
         }
 
         recv(cli_fd, buf, MAXSIZE-1, 0);
+        if (numbytes == -1) break;
         if ( buf[0] == 'E' || buf[0] == 'e' ) end = 1;
 
         if (end == 1) {
@@ -178,9 +192,10 @@ void update_next_class( int cli_fd, char * buf, char **dsps, int size ) {
     strcpy(buf, "\n======= Alterar comentário próxima aula =======\nDigite o código da disciplina: ");
 
     len = strlen(buf);
-    sendall(cli_fd, buf, &len);
+    sendall(cli_fd, buf, &len, 0);
 
     numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+    if (numbytes == -1) return;
 
     buf[numbytes] = '\0';
     for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
@@ -189,9 +204,10 @@ void update_next_class( int cli_fd, char * buf, char **dsps, int size ) {
     if ( id != -1 ) {
         strcpy(buf, "Insira comentário (250): ");
         len = strlen(buf);
-        sendall(cli_fd, buf, &len);
+        sendall(cli_fd, buf, &len, 0);
 
         numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+        if (numbytes == -1) return;
         buf[numbytes] = '\0';
 
         start_time();
@@ -206,7 +222,7 @@ void update_next_class( int cli_fd, char * buf, char **dsps, int size ) {
     }
 
     len = strlen(buf);
-    sendall(cli_fd, buf, &len);
+    sendall(cli_fd, buf, &len, 1);
 }
 
 void discipline_queries( int cli_fd, char * buf, char **dsps, int size ) {
@@ -226,9 +242,10 @@ void discipline_queries( int cli_fd, char * buf, char **dsps, int size ) {
         strcpy(buf, "\n======= Comentário sobre próxima aula =======\nDigite o código da disciplina: ");
     }
     len = strlen(buf);
-    sendall(cli_fd, buf, &len);
+    sendall(cli_fd, buf, &len, 0);
 
     int numbytes = recv(cli_fd, buf, MAXSIZE-1, 0);
+    if (numbytes == -1) return;
 
     buf[numbytes] = '\0';
     for ( int i = 0; i < numbytes; i++ ) buf[i] = toupper(buf[i]);
@@ -261,15 +278,29 @@ void discipline_queries( int cli_fd, char * buf, char **dsps, int size ) {
     }
 
     len = strlen(buf);
-    sendall(cli_fd, buf, &len);
+    sendall(cli_fd, buf, &len, 1);
 
 }
 
-int sendall(int s, char *buf, int *len) {
-    int total = 0, bytesleft = *len, n;
+int sendall(int s, char *buf, int *len, int timefunc) {
+    int total = 0, n;
 
-    while(total < *len) {
-        n = send(s, buf+total, bytesleft, 0);
+    char newbuf[MAXSIZE], time[9];
+    sprintf(time, "%09d", timestamp );
+
+    strcpy(newbuf, (const char*) time);
+
+    strcat(newbuf, (const char*) buf);
+
+    if ( timefunc == 0 ) {
+    	newbuf[0] = 'N';
+    }
+
+    int length = strlen(newbuf);
+    int bytesleft = length;
+
+    while(total < length) {
+        n = send(s, newbuf+total, bytesleft, 0);
         if (n == -1) { break; }
         total += n;
         bytesleft -= n;
@@ -347,7 +378,7 @@ void list_info_to_buffer (char * buf, int size) {
 }
 
 void discipline_to_buffer (char * buf, discipline * dsp) {
-    sprintf(buf, "%-16s %s \n%-15s %s \n%-15s %s \n%-15s %s \n%-16s %dhs \n%-16s %s \n",
+    sprintf(buf, "\n%-16s %s \n%-15s %s \n%-15s %s \n%-15s %s \n%-16s %dhs \n%-16s %s \n",
             "Código:", dsp->code,
             "Disciplina:", dsp->title,
             "Ementa:", dsp->syllabus,
@@ -357,16 +388,16 @@ void discipline_to_buffer (char * buf, discipline * dsp) {
 }
 
 void info_to_buffer (char * buf, discipline * dsp) {
-    sprintf(buf, "%-16s %s \n%-15s %s \n", "Código:", dsp->code, "Disciplina:", dsp->title);
+    sprintf(buf, "\n%-16s %s \n%-15s %s \n", "Código:", dsp->code, "Disciplina:", dsp->title);
 }
 
 void syllabus_to_buffer (char * buf, discipline * dsp) {
-    sprintf(buf, "%-15s %s \n%-15s %s \n", "Disciplina:", dsp->title, "Ementa:", dsp->syllabus);
+    sprintf(buf, "\n%-15s %s \n%-15s %s \n", "Disciplina:", dsp->title, "Ementa:", dsp->syllabus);
     strcat(buf, SECONDARY_MENU);
 }
 
 void next_class_to_buffer (char * buf, discipline * dsp) {
-    sprintf(buf, "%-15s %s \n%-16s %s \n", "Disciplina:", dsp->title, "Próxima aula:", dsp->next_class);
+    sprintf(buf, "\n%-15s %s \n%-16s %s \n", "Disciplina:", dsp->title, "Próxima aula:", dsp->next_class);
     strcat(buf, SECONDARY_MENU);
 }
 
@@ -453,5 +484,6 @@ void start_time() {
 
 int get_time() {
     gettimeofday(&tv2, NULL);
-    return tv2.tv_usec-tv1.tv_usec;
+    timestamp = (tv2.tv_sec*1e6 + tv2.tv_usec) - (tv1.tv_sec*1e6 + tv1.tv_usec);
+    return timestamp;
 }

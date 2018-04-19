@@ -14,7 +14,7 @@
 #include <sys/time.h>
 #include <signal.h>
 
-#define SERV_PORT "4990"
+#define SERV_PORT "5990"
 #define NUMDISCIPLINES 10
 #define MAXSIZE 4096
 #define INTRO "Bem vindo ao sistema de consultas de disciplinas.\nFaça login para acessar a aplicação."
@@ -40,7 +40,7 @@ void refresh_database( char **dsps, int size );
 void communication(int cli_fd, char **dsps, char * buf, int size);
 void update_next_class( int cli_fd, char * buf, char **dsps, int size );
 void discipline_queries( int cli_fd, char * buf, char **dsps, int size );
-int sendall(int s, char *buf, int *len);
+int sendall(int s, char *buf, int *len, int timestamp);
 
 // == SUPPORT FUNCTIONS == //
 void find_discipline(char * code, char **dsps, int size, int *idx);

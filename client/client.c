@@ -15,8 +15,8 @@ int sendall(int s, char *buf, int *len) {
 }
 
 int main(int argc, char *argv[]) {
-    int conn_fd, numbytes;
-    char buf[MAXDATASIZE];
+    int conn_fd, numbytes, ptimeval, ctimeval;
+    char buf[MAXDATASIZE], ptime[MAXDATASIZE];
     struct addrinfo hints, *serv_addr;
 
     memset(&hints, 0, sizeof hints);
@@ -37,14 +37,28 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         numbytes = recv(conn_fd, buf, MAXDATASIZE-1, 0);
-        buf[numbytes] = '\0';
+        ctimeval = get_time();
 
-        printf("%s", buf);
+        strcpy(ptime, (const char*) buf);
+
+        buf[numbytes] = '\0';
+        if ( buf[0] != 'N' ) {
+            ptime[9] = '\0';
+            ptimeval = atoi(ptime);
+
+            printf("\n======= Tempo de comunicação =======\n");
+            printf("tempo de total: %dµs\n", ctimeval);
+            printf("tempo de comunicação: %dµs\n", ctimeval - ptimeval);
+        }
+
+        printf("%s", buf+9);
 
         fgets(buf, MAXDATASIZE, stdin);
 
         int len = strlen(buf);
         buf[len-1] = '\0';
+
+        start_time();
         sendall(conn_fd, buf, &len);
 
         if ( (buf[0] == 'E' || buf[0] == 'e') && buf[1] == '\0' ) break;
@@ -52,4 +66,14 @@ int main(int argc, char *argv[]) {
 
     close(conn_fd);
     return 0;
+}
+
+void start_time() {
+    gettimeofday(&tv1, NULL);
+}
+
+int get_time() {
+    gettimeofday(&tv2, NULL);
+    timestamp = (tv2.tv_sec*1e6 + tv2.tv_usec) - (tv1.tv_sec*1e6 + tv1.tv_usec);
+    return timestamp;
 }
