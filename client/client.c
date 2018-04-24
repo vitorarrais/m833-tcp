@@ -1,5 +1,6 @@
 #include "client.h"
 
+int TEST = 0; // flag for testing mode
 
 int sendall(int s, char *buf, int *len) {
     int total = 0, bytesleft = *len, n;
@@ -25,6 +26,15 @@ int main(int argc, char *argv[]) {
 
     getaddrinfo(argv[1], SERV_PORT, &hints, &serv_addr);
 
+
+    char option[1];
+
+    if (argc>2){
+      TEST = 1;
+      strcpy(option, argv[2]);
+
+    }
+
     if ( (conn_fd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol)) == -1) {
         printf("Não foi possível criar socket.\n");
         return 0;
@@ -33,6 +43,13 @@ int main(int argc, char *argv[]) {
     if ( (connect(conn_fd, serv_addr->ai_addr, serv_addr->ai_addrlen)) == -1 ) {
         printf("Não foi possível estabelecer conexão.\n");
         return 0;
+    }
+
+    FILE * ftime;
+    if(TEST){
+      ftime = fopen("results.csv", "a");
+      fprintf(ftime, "Option %s\n", option);
+      fprintf(ftime, "query (µs), communication (µs)\n");
     }
 
     while (1) {
@@ -45,10 +62,7 @@ int main(int argc, char *argv[]) {
         if ( buf[0] != 'N' ) {
             ptime[9] = '\0';
             ptimeval = atoi(ptime);
-
-            printf("\n======= Tempo de comunicação =======\n");
-            printf("tempo de total: %dµs\n", ctimeval);
-            printf("tempo de comunicação: %dµs\n", ctimeval - ptimeval);
+              if (TEST) fprintf(ftime, "%d, %d\n", ptimeval, ctimeval - ptimeval);
         }
 
         printf("%s", buf+9);
@@ -63,6 +77,8 @@ int main(int argc, char *argv[]) {
 
         if ( (buf[0] == 'E' || buf[0] == 'e') && buf[1] == '\0' ) break;
     }
+
+    if (TEST) fclose(ftime);
 
     close(conn_fd);
     return 0;

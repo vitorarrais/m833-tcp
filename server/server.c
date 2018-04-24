@@ -2,7 +2,7 @@
 
 // = time variables =
 struct timeval tv1, tv2;
-int timestamp;
+int elapsedtime; // query elapsed time
 
 // == MAIN == //
 int main(int argc, char **argv) {
@@ -286,7 +286,7 @@ int sendall(int s, char *buf, int *len, int timefunc) {
     int total = 0, n;
 
     char newbuf[MAXSIZE], time[9];
-    sprintf(time, "%09d", timestamp );
+    sprintf(time, "%09d", elapsedtime );
 
     strcpy(newbuf, (const char*) time);
 
@@ -484,6 +484,6 @@ void start_time() {
 
 int get_time() {
     gettimeofday(&tv2, NULL);
-    timestamp = (tv2.tv_sec*1e6 + tv2.tv_usec) - (tv1.tv_sec*1e6 + tv1.tv_usec);
-    return timestamp;
+    elapsedtime = (tv2.tv_sec*1e6 + tv2.tv_usec) - (tv1.tv_sec*1e6 + tv1.tv_usec);
+    return elapsedtime;
 }
